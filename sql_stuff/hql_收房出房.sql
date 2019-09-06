@@ -1,0 +1,43 @@
+-- 用来筛选相同的room_id,private_id的房源，出房日期，收房日期和空闲日期
+
+with base as (
+select 
+id,
+data_id,
+table_name,
+diff,
+get_json_object(get_json_object(a.diff,'$.private_id'),'$.old') old_pid,
+get_json_object(get_json_object(a.diff,'$.private_id'),'$.new') new_pid,
+case when get_json_object(get_json_object(a.diff,'$.private_id'),'$.old') is not null 
+then get_json_object(get_json_object(a.diff,'$.private_id'),'$.old') 
+else get_json_object(get_json_object(a.diff,'$.private_id'),'$.new') end pid,
+p_day,
+case when get_json_object(get_json_object(a.diff,'$.private_id'),'$.old') is null 
+then 0
+else 1 end type 
+from danke_ods.ods_laputa__model_histories_day_pincr a where 1=1
+and p_day>='2019-08-01'
+and table_name='rooms'
+and get_json_object(a.diff,'$.private_id') is not NULL
+order by data_id
+),
+------------
+base2 as (
+select id,data_id room_data_id,pid private_id,
+floor((row_number() over(partition by data_id,pid order by p_day)+1)/2) as gp,--一次 old，一次new分一个组
+case when type = 0 then p_day else null end start_date,
+case when type = 1 then p_day else null end end_date
+from base
+order by room_data_id,private_id,id
+),
+------------
+base3 as (
+select room_data_id,private_id,start_date,
+lead(end_date,1) over(partition by room_data_id,private_id,gp order by room_data_id,private_id,id ) end_date
+from base2)
+------------
+select room_data_id,private_id,start_date,end_date 
+from base3
+where start_date is not null
+
+
